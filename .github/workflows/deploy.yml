@@ -1,0 +1,27 @@
+name: Deploy Bicep to Azure
+
+on:
+  push:
+    branches:
+      - main  # Deploy only on push to the main branch
+  workflow_dispatch:  # Allow manual triggering of the workflow
+
+jobs:
+  deploy-to-azure:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy Bicep templates
+      run: |
+        az deployment group create \
+          --resource-group ${{ secrets.RESOURCE_GROUP }} \
+          --template-file main.bicep \
+          --parameters @parameters.json
