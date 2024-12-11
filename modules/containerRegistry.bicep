@@ -7,7 +7,7 @@ param location string
 @description('Enable admin user for the Azure Container Registry')
 param acrAdminUserEnabled bool = true
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01' = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-12-01' = {
   name: name
   location: location
   sku: {
