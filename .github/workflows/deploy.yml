@@ -1,14 +1,18 @@
-name: Deploy Bicep to Azure
+name: Deploy to Azure Web App
 
 on:
   push:
     branches:
-      - main  # Deploy only on push to the main branch
-  workflow_dispatch:  # Allow manual triggering of the workflow
+      - main  # Trigger deployment only on pushes to the main branch
 
 jobs:
-  deploy-to-azure:
+  build-and-publish:
+    name: Build and Publish Docker Image to Azure Container Registry
     runs-on: ubuntu-latest
+
+    env:
+      REGISTRY_LOGIN_SERVER: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+      IMAGE_BASE_NAME: ${{ secrets.IMAGE_BASE_NAME }}
 
     steps:
     - name: Checkout code
@@ -19,9 +23,36 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Deploy Bicep templates
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+
+    - name: Set image version
+      id: image-version
+      run: echo "::set-output name=version::$(echo ${GITHUB_REF#refs/heads/})-$(date +'%Y.%m.%d.%H.%M')"
+
+    - name: Build and push Docker image
       run: |
-        az deployment group create \
-          --resource-group ${{ secrets.RESOURCE_GROUP }} \
-          --template-file main.bicep \
-          --parameters @parameters.json
+        docker build . -t ${{ env.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_BASE_NAME }}:${{ steps.image-version.outputs.version }}
+        docker build . -t ${{ env.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_BASE_NAME }}:${{ github.ref_name }}-latest
+        docker push ${{ env.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_BASE_NAME }}:${{ steps.image-version.outputs.version }}
+        docker push ${{ env.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_BASE_NAME }}:${{ github.ref_name }}-latest
+
+  deploy:
+    name: Deploy to Azure Web App
+    runs-on: ubuntu-latest
+    needs: build-and-publish  # Wait for the previous job to finish
+
+    steps:
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy Docker image to Azure Web App
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ secrets.WEBAPP_NAME }}
+        images: |
+          ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ secrets.IMAGE_BASE_NAME }}:${{ needs.build-and-publish.outputs.image-version }}
